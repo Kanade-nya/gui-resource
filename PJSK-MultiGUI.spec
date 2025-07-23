@@ -1,15 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 import janome
-from pathlib import Path
-
-ext_dir = Path("monotonic_align/monotonic_align")
-ext_files = list(ext_dir.glob("core.*.pyd")) + list(ext_dir.glob("core.*.so"))
-
-if not ext_files:
-    raise FileNotFoundError("core extension not found")
-
-core_binary = str(ext_files[0])
 
 janome_base = os.path.dirname(janome.__file__)
 janome_sysdic = os.path.join(janome_base, 'sysdic')
@@ -20,16 +11,12 @@ datas = [
     ('commons.py', '.')
 ]
 
-binaries = [
-    (core_binary, "monotonic_align/monotonic_align")
-]
-
 a = Analysis(
     ['PJSK-MultiGUI.py'],
     pathex=[],
-    binaries=binaries,
+    binaries=[],
     datas=datas,
-    hiddenimports=['monotonic_align.core'],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
