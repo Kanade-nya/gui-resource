@@ -22,6 +22,8 @@ jobs:
             apt install -y python3 python3-pip build-essential libgl1 libx11-dev &&
             pip3 install Cython==0.29.32 &&
             pip3 install -r requirements.txt pyinstaller &&
+            pip3 uninstall -y torch &&
+            pip3 install torch==1.12.1 &&
             cd monotonic_align &&
             python3 setup.py build_ext --inplace &&
             cd .. &&
