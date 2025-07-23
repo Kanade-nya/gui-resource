@@ -36,7 +36,7 @@ jobs:
           python3 setup.py build_ext --inplace
 
       - name: Build with PyInstaller
-        run: pyinstaller --clean --strip PJSK-MultiGUI.spec
+        run: pyinstaller --clean PJSK-MultiGUI.spec
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
