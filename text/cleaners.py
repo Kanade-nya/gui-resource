@@ -2,6 +2,8 @@ import re
 from unidecode import unidecode
 import pyopenjtalk
 from janome.tokenizer import Tokenizer
+import sys
+import os
 
 # Regular expression matching Japanese without punctuation marks:
 _japanese_characters = re.compile(
@@ -11,9 +13,14 @@ _japanese_characters = re.compile(
 _japanese_marks = re.compile(
     r'[^A-Za-z\d\u3005\u3040-\u30ff\u4e00-\u9fff\uff11-\uff19\uff21-\uff3a\uff41-\uff5a\uff66-\uff9d]')
 
-# Tokenizer for Japanese
-tokenizer = Tokenizer()
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.abspath(relative_path)
 
+dic_dir = resource_path("janome/sysdic")
+# Tokenizer for Japanese
+tokenizer = Tokenizer(dic_dir=dic_dir)
 
 def japanese_tokenization_cleaners(text):
     '''Pipeline for tokenizing Japanese text.'''

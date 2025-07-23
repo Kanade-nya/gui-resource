@@ -1,115 +1,112 @@
-import datetime
-import os.path
+from __future__ import annotations
+
+import platform
+import logging
 import random
 import sys
-import time
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional
 
+import soundfile as sf
 import torch
-from PyQt6.QtWidgets import QWidget, QMainWindow, QApplication, QVBoxLayout, QHBoxLayout, QToolTip, QComboBox, QSlider
-from PyQt6.QtWidgets import QPushButton, QLabel, QSplitter, QFrame, QTextEdit, QGroupBox, QFileDialog, QGridLayout, \
-    QLineEdit
-from PyQt6.QtGui import QFont
-from PyQt6.QtCore import Qt, QUrl, QCoreApplication
-from PyQt6.QtMultimedia import QSoundEffect,QAudioOutput,QMediaPlayer
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QFont
+from PySide6.QtMultimedia import QSoundEffect
+from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QGridLayout,
+                             QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+                             QSlider, QTextEdit, QVBoxLayout, QWidget)
 
-from text import transform
-from text.cleaners import japanese_tokenization_cleaners,japanese_cleaners2,japanese_cleaners
-from models import SynthesizerTrn
 import commons
 import utils
-import soundfile as sf
-import janome
-import logging
+from models import SynthesizerTrn
+from text import transform
+from text.cleaners import (japanese_cleaners, japanese_cleaners2,
+                           japanese_tokenization_cleaners)
 
-logger = logging.getLogger('test_logger')
+logger = logging.getLogger("PJSK-MultiGUI")
 # 设置日志等级
 logger.setLevel(logging.DEBUG)
 # 追加写入文件a ，设置utf-8编码防止中文写入乱码
-test_log = logging.FileHandler('./logs/info.log', 'a', encoding='utf-8')
-test_log.setLevel(logging.DEBUG)
+if platform.system() == "Darwin":
+    log_dir = Path.home() / "Library/Logs/PJSK-MultiGUI"
+else:
+    log_dir = Path.home() / "PJSK-MultiGUI/logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+handler = logging.FileHandler(log_dir / "app.log", encoding="utf-8")
 # 向文件输出的日志信息格式
-formatter = logging.Formatter(
-    '%(asctime)s - %(filename)s - line:%(lineno)d - %(levelname)s - %(message)s -%(process)s')
-test_log.setFormatter(formatter)
+handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+)
 # 加载文件到logger对象中
-logger.addHandler(test_log)
+logger.addHandler(handler)
 
 
-symbolDict = {
-    'airi': 1,
-    'mizuki':1,
-    'saki': 1,
-    'ichika':2,
-    'ena': 3,
-    'mmj': 3,
-    'mafuyu': 3,
-    'kanade': 4,
-    'honami': 3,
-    'shiho':3,
-    'mafuyu_real':3,
-    'vbs': 3,
-    'ws':3
+@dataclass(frozen=True)
+class SymbolPreset:
+    id: int
+    symbols: List[str]
+
+
+SYMBOL_PRESETS: Dict[str, SymbolPreset] = {
+    "default": SymbolPreset(1, list(' !"&*,-.?ABCINU[]abcdefghijklmnoprstuwyz{}~')),
+    "preset2": SymbolPreset(2, [
+        "_", *list(",.!?-"),
+        *list("AEINOQUabdefghijkmnoprstuvwyzʃʧ↓↑ ")]),
+    "preset3": SymbolPreset(3, [
+        "_", *list(",.!?-~…"),
+        *list("AEINOQUabdefghijkmnoprstuvwyzʃʧʦ↓↑ ")]),
+    "ipa": SymbolPreset(4, [
+        "_", *list(";:,.!?¡¿—…\"«»“” "),
+        *list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"),
+        *list("ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ")]),
 }
 
-symbols = list(' !"&*,-.?ABCINU[]abcdefghijklmnoprstuwyz{}~')
-hps = None
-net_g = None
+CONFIG_TO_PRESET = {
+    "mmj.json": "default",
+    "vbs.json": "default",
+    "ws.json": "default",
+    "mafuyu.json": "default",
+}
 
-def change_symbols(type):
-    global symbols
-    if type == 1:
-        symbols = list(' !"&*,-.?ABCINU[]abcdefghijklmnoprstuwyz{}~')
-    elif type == 2:
-        _pad        = '_'
-        _punctuation = ',.!?-'
-        _letters = 'AEINOQUabdefghijkmnoprstuvwyzʃʧ↓↑ '
-        symbols = [_pad] + list(_punctuation) + list(_letters)
-    elif type == 3:
-        _pad = '_'
-        _punctuation = ',.!?-~…'
-        _letters = 'AEINOQUabdefghijkmnoprstuvwyzʃʧʦ↓↑ '
-        symbols = [_pad] + list(_punctuation) + list(_letters)
-    elif type == 4:
-        _pad = '_'
-        _punctuation = ';:,.!?¡¿—…"«»“” '
-        _letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-        _letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
-        symbols = [_pad] + list(_punctuation) + list(_letters) + list(_letters_ipa)
+MULTI_SPK_GROUPS = {
+    "mmj.json": ["minori", "haruka", "airi", "shizuku"],
+    "vbs.json": ["akito", "an", "kohane", "toya"],
+    "ws.json": ["emu", "nene", "rui", "tsukasa"],
+    "mafuyu.json": ["white", "black"],
+}
 
-def get_text_type1(text, hps):
-    text_norm = transform.cleaned_text_to_sequence(text,symbols)
-    if hps.data.add_blank:
-        text_norm = commons.intersperse(text_norm, 0)
-    text_norm = torch.LongTensor(text_norm)
-    return text_norm
-
-def get_text_type2(text, hps):
-    text_norm = transform.cleaned_text_to_sequence(text,symbols)
-    if hps.data.add_blank:
-        text_norm = commons.intersperse(text_norm, 0)
-    text_norm = torch.LongTensor(text_norm)
-    return text_norm
-
-def get_text_type3(text, hps):
-    text_norm = transform.cleaned_text_to_sequence(text,symbols)
-    if hps.data.add_blank:
-        text_norm = commons.intersperse(text_norm, 0)
-    text_norm = torch.LongTensor(text_norm)
-    return text_norm
-
-def load_checkpoint(path):
-    print(555)
-    try:
-        utils.load_checkpoint(path, net_g, None)
-    except Exception as e:
-        print(e)
-        logger.error(e)
-    print(987)
+def clean_text(text: str, preset: SymbolPreset) -> torch.LongTensor:
+    """Convert raw text to tensor according to preset symbols."""
+    cleaner_map = {
+        1: japanese_tokenization_cleaners,
+        2: japanese_cleaners,
+        3: japanese_cleaners2,
+        4: japanese_tokenization_cleaners,
+    }
+    cleaner = cleaner_map.get(preset.id, japanese_tokenization_cleaners)
+    seq = transform.cleaned_text_to_sequence(cleaner(text), preset.symbols)
+    return torch.LongTensor(commons.intersperse(seq, 0)) if commons else torch.LongTensor(seq)
 
 class Window(QWidget):
+    SAMPLE_RATE = 22050
 
-    def __init__(self):
-        super(Window, self).__init__()
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("PJSK‑MultiGUI")
+        QApplication.setFont(QFont("SimSun", 12))
+        self.resize(1080, 720)
+        self._center_on_screen()
+
+        self.hps = None  # type: ignore
+        self.model: Optional[SynthesizerTrn] = None
+        self.current_preset = SYMBOL_PRESETS["default"]
+        self.multi_speaker = False
+        self.speaker_id: int = 0
+        self.current_audio = None  # type: ignore
+        self.current_audio_path: Optional[Path] = None
+        """
         self.initUI()
         self.loadModel = False
         self.loadConfig = False
@@ -120,374 +117,225 @@ class Window(QWidget):
         self.audio = None
         self.symbolType = 1
         self.MultiId = 0
-    def initUI(self):
-        QApplication.setFont(QFont('宋体', 12))
-        self.resize(1080, 720)
-        self.center()
+        """
 
-        grid = QGridLayout()
-        grid.spacing()
-        # group1
-        group_box1_choose_config2 = QPushButton("选择配置")
-        group_box1_choose_config2.clicked.connect(self.openFileConfig)
-        self.group_box1_line2 = QLineEdit()
-        group_box1_hbox2 = QHBoxLayout()
-        group_box1_hbox2.addWidget(group_box1_choose_config2)
-        group_box1_hbox2.addWidget(self.group_box1_line2)
+        self._init_ui()
+    def _init_ui(self) -> None:
+        layout = QGridLayout(self)
 
-        group_box1_choose_model = QPushButton("选择文件")
-        group_box1_choose_model.clicked.connect(self.openFileModel)
-        self.group_box1_line = QLineEdit()
-        group_box1_hbox = QHBoxLayout()
-        group_box1_hbox.addWidget(group_box1_choose_model)
-        group_box1_hbox.addWidget(self.group_box1_line)
+        # --- Model selection group
+        model_group = QGroupBox("选择模型")
+        mg_layout = QVBoxLayout()
+        self.cfg_path_edit = QLineEdit()
+        self.cfg_path_edit.setReadOnly(True)
+        self.model_path_edit = QLineEdit()
+        self.model_path_edit.setReadOnly(True)
 
+        cfg_btn = QPushButton("选择配置")
+        cfg_btn.clicked.connect(self._select_config)
+        model_btn = QPushButton("选择文件")
+        model_btn.clicked.connect(self._select_model)
 
+        row1 = QHBoxLayout(); row1.addWidget(cfg_btn); row1.addWidget(self.cfg_path_edit)
+        row2 = QHBoxLayout(); row2.addWidget(model_btn); row2.addWidget(self.model_path_edit)
+        mg_layout.addLayout(row1); mg_layout.addLayout(row2)
+        model_group.setLayout(mg_layout)
+        layout.addWidget(model_group, 0, 0)
 
-        group_box1_vbox = QVBoxLayout()
-        group_box1_vbox.addLayout(group_box1_hbox2)
-        group_box1_vbox.addLayout(group_box1_hbox)
+        # --- Speaker selection
+        self.spk_group = QGroupBox("当前角色")
+        spk_layout = QVBoxLayout()
+        self.spk_combo = QComboBox(); self.spk_combo.currentTextChanged.connect(self._speaker_changed)
+        spk_btn = QPushButton("确定"); spk_btn.clicked.connect(self._confirm_speaker)
+        self.spk_label = QLabel("当前选择：")
+        spk_bottom = QHBoxLayout(); spk_bottom.addWidget(self.spk_label); spk_bottom.addStretch(); spk_bottom.addWidget(spk_btn)
+        spk_layout.addWidget(self.spk_combo); spk_layout.addLayout(spk_bottom)
+        self.spk_group.setLayout(spk_layout)
+        layout.addWidget(self.spk_group, 1, 0)
 
-        group_box1 = QGroupBox("选择模型")
-        group_box1.setLayout(group_box1_vbox)
-        grid.addWidget(group_box1, 0, 0, 1, 1)
+        # --- TTS input
+        tts_group = QGroupBox("语音合成")
+        tts_layout = QVBoxLayout()
+        tts_layout.addWidget(QLabel("输入日语原文"))
+        self.text_edit = QTextEdit(); self.text_edit.setMaximumHeight(150)
+        tts_layout.addWidget(self.text_edit)
 
-        # group2
-        group_box2 = QGroupBox("当前角色")
-        self.group_box2_v1 = QVBoxLayout()
-        self.groupCombo = QComboBox()
-        self.group_box2_h1 = QHBoxLayout()
+        slider_row = QHBoxLayout()
+        self.speed_slider = QSlider(Qt.Orientation.Horizontal); self.speed_slider.setRange(50, 200); self.speed_slider.setValue(100)
+        self.speed_slider.valueChanged.connect(lambda v: self.speed_label.setText(f"当前语速：{v/100:.2f}"))
+        self.speed_label = QLabel("当前语速：1.00")
+        gen_btn = QPushButton("生成"); gen_btn.clicked.connect(self._generate_audio)
+        slider_row.addWidget(self.speed_slider); slider_row.addWidget(self.speed_label); slider_row.addWidget(gen_btn)
+        tts_layout.addLayout(slider_row)
+        tts_group.setLayout(tts_layout)
+        layout.addWidget(tts_group, 2, 0, 2, 1)
 
-        self.groupCombo.textActivated[str].connect(self.comboChange)
-        self.combo_label = QLabel("当前选择：")
+        # --- Output section
+        out_group = QGroupBox("输出")
+        out_layout = QHBoxLayout()
+        play_btn = QPushButton("播放"); play_btn.clicked.connect(self._play_audio)
+        save_btn = QPushButton("保存"); save_btn.clicked.connect(self._save_audio)
+        out_layout.addWidget(play_btn); out_layout.addWidget(save_btn)
+        out_group.setLayout(out_layout)
+        layout.addWidget(out_group, 4, 0)
 
-        self.group_box2_btn = QPushButton("确定")
-        self.group_box2_btn.clicked.connect(self.chooseCharacter)
-        self.group_box2_h1.addWidget(self.combo_label)
-        self.group_box2_h1.addStretch(1)
-        self.group_box2_h1.addWidget(self.group_box2_btn)
+        # --- Log / info panel
+        self.log_view = QTextEdit(); self.log_view.setReadOnly(True)
+        layout.addWidget(self.log_view, 0, 1, 5, 1)
 
-        self.group_box2_v1.addWidget(self.groupCombo)
-        self.group_box2_v1.addLayout(self.group_box2_h1)
+    def _select_config(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择配置", "./", "Config (*.json)")
+        if not file_path:
+            return
+        self.cfg_path_edit.setText(file_path)
+        self._load_config(Path(file_path))
 
-        group_box2.setLayout(self.group_box2_v1)
-        grid.addWidget(group_box2, 1, 0, 1, 1)
+    def _select_model(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(self, "选择模型", "./", "Model (*.pth)")
+        if not file_path:
+            return
+        self.model_path_edit.setText(file_path)
+        self._load_model(Path(file_path))
 
-        # group3
-        group_box3 = QGroupBox("语音合成")
-        group_box3_v1 = QVBoxLayout()
-        self.group_box3_textarea = QTextEdit()
-        self.group_box3_textarea.adjustSize()
-        self.group_box3_textarea.setMaximumHeight(150)
-
-        group_box3_label = QLabel("输入日语原文")
-        group_box3_h1 = QHBoxLayout()
-
-        sld = QSlider(Qt.Orientation.Horizontal, self)
-        sld.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        # sld.setGeometry(30, 40, 200, 30)
-        sld.setValue(100)
-        sld.valueChanged[int].connect(self.changeValue)
-        sld.setMinimum(0)
-        sld.setMaximum(200)
-        self.sld_label = QLabel("当前语速：1")
-        group_box3_btn = QPushButton("生成")
-        group_box3_btn.clicked.connect(self.createVoice)
-        group_box3_h1.addWidget(sld)
-        group_box3_h1.addWidget(self.sld_label)
-        group_box3_h1.addWidget(group_box3_btn)
-
-        group_box3_v1.addWidget(group_box3_label)
-        group_box3_v1.addSpacing(2)
-        group_box3_v1.addWidget(self.group_box3_textarea)
-        group_box3_v1.addLayout(group_box3_h1)
-        group_box3.setLayout(group_box3_v1)
-        grid.addWidget(group_box3, 2, 0, 2, 1)
-
-        vbox = QVBoxLayout()
-        grid.addLayout(vbox.addStretch(1), 3, 0, 2, 1)
-        # group4
-        group_box4 = QGroupBox("输出")
-        group_box4_h1 = QHBoxLayout()
-        group_box4_btn = QPushButton("播放")
-        group_box4_save = QPushButton("保存")
-        group_box4_save.clicked.connect(self.saveWav)
-        group_box4_btn.clicked.connect(self.playSound)
-        group_box4_h1.addWidget(group_box4_btn)
-        # group_box4_h1.addStretch(1)
-        group_box4_h1.addWidget(group_box4_save)
-        group_box4.setLayout(group_box4_h1)
-        grid.addWidget(group_box4, 4, 0, 1, 1)
-
-        # right
-        self.text_area = QTextEdit()
-        self.text_area.adjustSize()
-        grid.addWidget(self.text_area, 0, 1, 5, 1)
-        self.text_area.setReadOnly(True)
-        self.text_area.sizeHint()
-
-        self.setLayout(grid)
-
-        # self.setGeometry(100, 100, 1080, 720)
-        self.setWindowTitle('PJSK-MultiGUI')
-        self.show()
-
-
-
-    def openFileModel(self):
+    def _load_config(self, cfg_path: Path) -> None:
         try:
-            modelName, modelType = QFileDialog.getOpenFileName(self, "选择模型", "./", "Pth file (*.pth)")
-            print(modelName)
-            if modelName == '':
-                self.textUpdate('Error: ' + '模型未加载')
-                return 0
-            self.group_box1_line.setText(modelName)
-            self.group_box1_line.setReadOnly(True)
-            print('load')
-            load_checkpoint(modelName)
-        except Exception as e:
-            self.textUpdate('Error: ' + str(e))
-            logger.error(e)
-            return 0
-        self.textUpdate(modelName + " 模型加载完成")
-        self.loadModel = True
+            self.hps = utils.get_hparams_from_file(str(cfg_path))
+            self._update_symbol_preset(cfg_path.name)
+            self._populate_speaker_combo(cfg_path.name)
+            self._log(f"配置文件加载成功: {cfg_path.name}")
+        except Exception as exc:
+            self._error(f"配置文件加载失败: {exc}")
 
-
-
-    def openFileConfig(self):
+    def _load_model(self, model_path: Path) -> None:
+        if self.hps is None:
+            self._error("请先载入配置文件。")
+            return
         try:
-            modelName, modelType = QFileDialog.getOpenFileName(self, "选择模型", "./", "Config file (*.json)")
+            self.model = SynthesizerTrn(
+                len(self.current_preset.symbols),
+                self.hps.data.filter_length // 2 + 1,
+                self.hps.train.segment_size // self.hps.data.hop_length,
+                n_speakers=self.hps.data.n_speakers,
+                **self.hps.model,
+            )
+            self.model.eval()
+            utils.load_checkpoint(str(model_path), self.model, None)
+            self._log(f"模型文件加载成功: {model_path.name}")
+        except Exception as exc:
+            self._error(f"模型文件加载失败: {exc}")
 
-            if modelName.split('/')[-1] == 'mmj.json':
-                self.groupCombo.clear()
-                self.groupCombo.addItem('minori')
-                self.groupCombo.addItem('haruka')
-                self.groupCombo.addItem('airi')
-                self.groupCombo.addItem('shizuku')
-                self.combo_label.setText('当前选择：minori')
-                self.character = 'minori'
-                self.MultiId = 0
-                self.multiSpeaker = True
-            elif modelName.split('/')[-1] == 'vbs.json':
-                self.groupCombo.clear()
-                self.groupCombo.addItem('akito')
-                self.groupCombo.addItem('an')
-                self.groupCombo.addItem('kohane')
-                self.groupCombo.addItem('toya')
-                self.combo_label.setText('当前选择：akito')
-                self.character = 'minori'
-                self.MultiId = 0
-                self.multiSpeaker = True
-            elif modelName.split('/')[-1] == 'ws.json':
-                self.groupCombo.clear()
-                self.groupCombo.addItem('emu')
-                self.groupCombo.addItem('nene')
-                self.groupCombo.addItem('rui')
-                self.groupCombo.addItem('tsukasa')
-                self.combo_label.setText('当前选择：emu')
-                self.character = 'minori'
-                self.MultiId = 0
-                self.multiSpeaker = True
-            elif modelName.split('/')[-1] == 'mafuyu.json':
-                self.groupCombo.clear()
-                self.groupCombo.addItem('white')
-                self.groupCombo.addItem('black')
-                self.combo_label.setText('当前选择：white')
-                self.character = 'white'
-                self.MultiId = 0
-                self.multiSpeaker = True
-            else:
-                self.groupCombo.clear()
-                self.groupCombo.addItem(modelName.split('/')[-1].split('.')[0])
-                self.character = modelName.split('/')[-1].split('.')[0]
-                text = "当前选择：" + modelName.split('/')[-1].split('.')[0]
-                print(5556)
-                self.combo_label.setText(text)
-                print(55)
-                self.combo_label.adjustSize()
-                self.multiSpeaker = False
-                print(66)
-            self.symbolType = symbolDict[modelName.split('/')[-1].split('.')[0]]
-            print(self.symbolType)
-            print(self.symbolType)
-            change_symbols(self.symbolType)
-        except Exception as e:
-            print(e)
-            logger.error(e)
-            self.textUpdate('加载错误：未识别的文件 ' + str(e))
+    def _update_symbol_preset(self, cfg_name: str) -> None:
+        preset_key = CONFIG_TO_PRESET.get(cfg_name, "default")
+        self.current_preset = SYMBOL_PRESETS[preset_key]
+        self._log(f"使用符号预设: {preset_key}")
 
-            # self.textUpdate('Error: ' + str(e))
-            return 0
-        # 加载hps配置
-        try:
-            global hps
-            hps = utils.get_hparams_from_file(modelName)
-            print(777)
-            # 生成net_g
-            global net_g
-            net_g = SynthesizerTrn(
-                len(symbols),
-                hps.data.filter_length // 2 + 1,
-                hps.train.segment_size // hps.data.hop_length,
-                n_speakers=hps.data.n_speakers,
-                **hps.model)
-            net_g.eval()
-        except Exception as e:
-            self.textUpdate('hps 加载失败')
-            logger.error(e)
-            return 0
-        # print(net_g)
-        # 其它配置
-        self.group_box1_line2.setText(modelName)
-        self.group_box1_line2.setReadOnly(True)
-        self.loadConfig = True
-        self.textUpdate(modelName + " 配置文件加载完成")
-
-    def center(self):
-
-        qr = self.frameGeometry()
-        cp = self.screen().availableGeometry().center()
-
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
-
-    def chooseCharacter(self):
-        self.textUpdate(self.combo_label.text())
-
-    def comboChange(self, text):
-        if text == 'minori' or text == 'akito' or text=='emu':
-            self.MultiId = 0
-        elif text == 'haruka' or text == 'an' or text =='nene':
-            self.MultiId = 1
-        elif text == 'airi' or text == 'kohane' or text =='rui':
-            self.MultiId = 2
-        elif text == 'shizuku' or text == 'toya' or text=='tsukasa':
-            self.MultiId = 3
-        elif text == 'white':
-            self.MultiId = 0
-        elif text == 'black':
-            self.MultiId = 1
-        text = "当前选择：" + text
-        self.character = text
-        self.combo_label.setText(text)
-        self.combo_label.adjustSize()
-
-    def changeValue(self, value):
-        self.speed = value / 100
-        self.sld_label.setText("当前语速：" + str((value / 100)))
-
-    def playSound(self):
-        # print(self.audio)
-        print('播放' + self.fileName)
-        file = self.fileName  # 音频文件路径
-        effect = QSoundEffect(QCoreApplication.instance())
-        effect.setSource(QUrl.fromLocalFile(file))
-        print(QUrl.fromLocalFile(file))
-        # effect.setSource(QUrl.fromLocalFile(self.audio))
-        effect.setLoopCount(1)
-        effect.setVolume(1)
-        effect.play()
-        # player = QMediaPlayer()
-        # content =
-        # audio_output = QAudioOutput()
-        # player.setAudioOutput(audio_output)
-        # player.setSource(self.audio)
-        # audio_output.setVolume(1)
-
-    def saveWav(self):
-        if not os.path.exists('results'):
-            os.makedirs('results')
-        sf.write('results/' + self.fileName.split('/')[1], self.audio, 22050)
-        self.textUpdate('保存到' + 'results/' + self.fileName.split('/')[1])
-
-    def textUpdate(self, msg):
-        origin_text = self.text_area.toPlainText()
-        self.text_area.append(msg)
-
-    def createVoice(self):
-        if not self.loadModel:
-            self.textUpdate('没有载入模型!')
-        elif not self.loadConfig:
-            self.textUpdate("没有载入配置")
+    def _populate_speaker_combo(self, cfg_name: str) -> None:
+        self.spk_combo.clear()
+        speakers = MULTI_SPK_GROUPS.get(cfg_name)
+        if speakers:
+            self.spk_combo.addItems(speakers)
+            self.multi_speaker = True
+            self.speaker_id = 0
         else:
-            if self.fileName != '':
-                if os.path.exists(self.fileName):
-                    os.remove(os.path.join(self.fileName))
-                    print(self.fileName)
-                    print('delete')
-            self.textUpdate("生成中...")
-            print('this2')
-            try:
-                ret = self.jtts(self.group_box3_textarea.toPlainText(),self.speed)
-            except:
+            self.spk_combo.addItem(cfg_name.split(".")[0])
+            self.multi_speaker = False
+            self.speaker_id = 0
+        # Trigger label update
+        self._speaker_changed(self.spk_combo.currentText())
 
-                return 0
-            if ret != 'Error':
-                self.textUpdate("成功，" + time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())))
-            self.textUpdate("————————————————")
+    def _speaker_changed(self, name: str) -> None:
+        if self.multi_speaker:
+            self.speaker_id = self.spk_combo.currentIndex()
+        self.spk_label.setText(f"当前选择：{name}")
 
-    def jtts(self,text, length_scale):
-        print(text,length_scale)
-        # tokenization
-        # print(length_scale)
-        # print(net_g)
-        # print(net_g)
-        # print(symbols)
-        # print(hps)
-        print(self.symbolType)
+    def _confirm_speaker(self) -> None:
+        self._log(self.spk_label.text())
+
+    def _center_on_screen(self) -> None:
+        geometry = self.frameGeometry(); geometry.moveCenter(self.screen().availableGeometry().center()); self.move(geometry.topLeft())
+        
+    def _play_audio(self):
+        if not self.current_audio_path or not self.current_audio_path.exists():
+            self._error("没有可播放的音频文件。请先生成音频。")
+            return
         try:
-            if self.symbolType == 1:
-                stn_tst = get_text_type1(japanese_tokenization_cleaners(text), hps)
-            if self.symbolType == 2:
-                stn_tst = get_text_type2(japanese_cleaners(text), hps)
-            elif self.symbolType == 3:
-                stn_tst = get_text_type3(japanese_cleaners2(text), hps)
-            elif self.symbolType == 4:
-                stn_tst = get_text_type1(japanese_tokenization_cleaners(text), hps)
-            if not os.path.exists('playSounds'):
-                os.makedirs('playSounds')
+            effect = QSoundEffect(self)
+            effect.setSource(QUrl.fromLocalFile(str(self.current_audio_path)))
+            effect.setLoopCount(1)
+            effect.setVolume(1.0)
+            effect.play()
+            self._playing_effect = effect
+            effect.play()
+            self._log(f"播放: {self.current_audio_path.name}")
         except Exception as e:
-            logger.error(e)
-            self.textUpdate(f'KeyError: {str(e)}')
-        with torch.no_grad():
-            print('this1')
-            try:
-                x_tst = stn_tst.unsqueeze(0)
-                x_tst_lengths = torch.LongTensor([stn_tst.size(0)])
+            self._error(f"播放失败: {e}")
 
-                print(self.character)
-                if self.multiSpeaker:
-                    print(1111)
-                    sid = torch.LongTensor([self.MultiId])
-                    print(sid)
-                    audio = net_g.infer(x_tst, x_tst_lengths, sid=sid, noise_scale=.667, noise_scale_w=0.8, length_scale=length_scale)[0][
-                        0, 0].data.float().numpy()
+    def _generate_audio(self) -> None:
+        if self.model is None or self.hps is None:
+            self._error("模型或配置未加载。请先选择模型和配置文件。")
+            return
+        raw_text = self.text_edit.toPlainText().strip()
+        if not raw_text:
+            self._error("请输入要合成的文本。")
+            return
+        self._log("开始生成音频...")
+        
+        try:
+            with torch.no_grad():
+                raw_text = self.text_edit.toPlainText()
+                raw_text = raw_text.replace('\n', ' ').strip()
+                stn = clean_text(raw_text, self.current_preset)
+                x_tst = stn.unsqueeze(0)
+                x_len = torch.LongTensor([stn.size(0)])
+                infer_kwargs = dict(
+                    noise_scale=0.667,
+                    noise_scale_w=0.8,
+                    length_scale=self.speed_slider.value() / 100.0,
+                )
+                if self.multi_speaker:
+                    audio = self.model.infer(x_tst, x_len, sid=torch.LongTensor([self.speaker_id]), **infer_kwargs)[0][0, 0].cpu().numpy()
                 else:
+                    audio = self.model.infer(x_tst, x_len, **infer_kwargs)[0][0, 0].cpu().numpy()
+                # Save to temp file
+                self.current_audio = audio
+                temp_dir = Path(tempfile.gettempdir()) / "PJSK-MultiGUI"
+                temp_dir.mkdir(exist_ok=True)
+                safe_name = raw_text.replace("?", "").strip()[:10] or "voice"
+                self.current_audio_path = temp_dir / f"{safe_name}_{random.randint(1000,9999)}.wav"
+                sf.write(self.current_audio_path, audio, self.SAMPLE_RATE)
+                self._log("音频生成成功。")
+        except Exception as exc:
+            self._error(f"推理失败: {exc}")
+    
+    def _save_audio(self) -> None:
+        if self.current_audio is None:
+            self._error("没有生成音频可保存。请先生成音频。")
+            return
+        target, _ = QFileDialog.getSaveFileName(self, "Save WAV", "result.wav", "WAV (*.wav)")
+        if not target:
+            return
+        try:
+            sf.write(target, self.current_audio, self.SAMPLE_RATE)
+            self._log(f"保存到: {target}")
+        except Exception as exc:
+            self._error(f"保存失败: {exc}")
 
-                    try:
-                        audio = net_g.infer(x_tst, x_tst_lengths, noise_scale=.667, noise_scale_w=0.8, length_scale=length_scale)[0][
-                            0, 0].data.float().numpy()
-                    except Exception as e:
-                        print(e)
-                    print(333)
-                filename = 'playSounds/' + text.replace('?', '') + str(random.randint(1,100))+'.wav'
-                self.fileName = filename
-                self.audio = audio
-                print(self.fileName)
-                sf.write(filename, audio, 22050)
-            except Exception as e:
-                self.textUpdate(f'Error: {str(e)}')
-                logger.error(e)
-                return 'Error'
-def main():
+    def _log(self, message: str) -> None:
+        logger.info(message)
+        self.log_view.append(message)
 
+    def _error(self, message: str) -> None:
+        logger.error(message)
+        self.log_view.append(f"Error: {message}")
 
+def main() -> None:
     try:
         app = QApplication(sys.argv)
         ex = Window()
+        ex.show()
         sys.exit(app.exec())
-    except Exception as e:
-        logger.error(e)
+    except Exception as exc:
+        logger.critical(f"Fatal error: {exc}")
 
 
 if __name__ == '__main__':
