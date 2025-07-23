@@ -81,7 +81,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PJSK-macOS-Intel
-          path: dist/
+          path: |
+            dist/PJSK-MultiGUI.app/
+            dist/PJSK-MultiGUI
 
   build-macos-arm:
     runs-on: macos-14
@@ -108,4 +110,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PJSK-macOS-ARM
-          path: dist/
+          path: |
+            dist/PJSK-MultiGUI.app/
+            dist/PJSK-MultiGUI
