@@ -138,3 +138,43 @@ jobs:
         with:
           name: PJSK-macOS-ARM-Zip
           path: PJSK-MultiGUI-macOS.zip
+  release-assets:
+    name: Upload to GitHub Release
+    needs:
+      - build-linux
+      - build-windows
+      - build-macos-intel
+      - build-macos-arm
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PJSK-Linux
+          path: out/linux
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: PJSK-Windows
+          path: out/windows
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: PJSK-macOS-Intel-Zip
+          path: out/macos-intel
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: PJSK-macOS-ARM-Zip
+          path: out/macos-arm
+
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            out/linux/**
+            out/windows/**
+            out/macos-intel/**
+            out/macos-arm/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
