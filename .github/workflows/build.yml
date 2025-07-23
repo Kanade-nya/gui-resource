@@ -4,11 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-    paths:
-      - '**.py'
-      - '**.spec'
-      - '.github/workflows/build.yml'
-      - requirements.txt
   workflow_dispatch:
   release:
     types: [published]
