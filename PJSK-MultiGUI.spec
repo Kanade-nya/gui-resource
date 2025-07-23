@@ -6,6 +6,7 @@ janome_base = os.path.dirname(janome.__file__)
 janome_sysdic = os.path.join(janome_base, 'sysdic')
 
 datas = [
+    ('monotonic_align', 'monotonic_align'),
     (janome_sysdic, 'janome/sysdic'),
     ('commons.py', '.')
 ]
