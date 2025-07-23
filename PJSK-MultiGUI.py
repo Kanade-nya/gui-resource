@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import monotonic_align.core
 import platform
 import logging
 import random
