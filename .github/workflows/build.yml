@@ -25,7 +25,7 @@ jobs:
             cd monotonic_align &&
             python3 setup.py build_ext --inplace &&
             cd .. &&
-            pyinstaller PJSK-MultiGUI.spec
+            pyinstaller --clean --strip PJSK-MultiGUI.spec
           "
 
       - name: Upload Linux artifact
@@ -90,12 +90,15 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller PJSK-MultiGUI.spec
 
-      - name: Upload macOS Intel artifact
+      - name: Compress .app bundle
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS.zip
+
+      - name: Upload compressed .app zip
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-macOS-Intel
-          path: |
-            dist/PJSK-MultiGUI.app/
+          name: PJSK-macOS-Intel-Zip
+          path: PJSK-MultiGUI-macOS.zip
 
   build-macos-arm:
     runs-on: macos-14
@@ -122,10 +125,13 @@ jobs:
 
       - name: Build with PyInstaller
         run: pyinstaller PJSK-MultiGUI.spec
+      
+      - name: Compress .app bundle
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS.zip
 
-      - name: Upload macOS ARM artifact
+      - name: Upload compressed .app zip
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-macOS-ARM
-          path: |
-            dist/PJSK-MultiGUI.app/
+          name: PJSK-macOS-ARM-Zip
+          path: PJSK-MultiGUI-macOS.zip
