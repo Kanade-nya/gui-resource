@@ -66,9 +66,9 @@ jobs:
 
   build-macos-intel:
     runs-on: macos-13
-    name: Build on macOS Intel (target 10.15)
+    name: Build on macOS Intel (target 11.0)
     env:
-      MACOSX_DEPLOYMENT_TARGET: '10.15'
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
       - uses: actions/checkout@v4
 
