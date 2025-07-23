@@ -2,11 +2,16 @@ name: Build PJSK-MultiGUI
 
 on:
   push:
+    tags:
+      - 'v*'
     paths:
       - '**.py'
       - '**.spec'
+      - '.github/workflows/build.yml'
       - requirements.txt
   workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
   build-linux:
