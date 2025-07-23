@@ -83,7 +83,6 @@ jobs:
           name: PJSK-macOS-Intel
           path: |
             dist/PJSK-MultiGUI.app/
-            dist/PJSK-MultiGUI
 
   build-macos-arm:
     runs-on: macos-14
@@ -112,4 +111,3 @@ jobs:
           name: PJSK-macOS-ARM
           path: |
             dist/PJSK-MultiGUI.app/
-            dist/PJSK-MultiGUI
