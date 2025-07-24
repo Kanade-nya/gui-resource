@@ -20,7 +20,7 @@ def resource_path(relative_path):
 
 dic_dir = resource_path("janome/sysdic")
 # Tokenizer for Japanese
-tokenizer = Tokenizer(dic_dir=dic_dir)
+tokenizer = Tokenizer()
 
 def japanese_tokenization_cleaners(text):
     '''Pipeline for tokenizing Japanese text.'''
