@@ -6,6 +6,6 @@ numpy==1.23.2
 pyopenjtalk-prebuilt==0.2.0
 scipy==1.9.1
 SoundFile==0.10.3.post1
-torch==2.4.1+cpu
+torch
 Unidecode==1.3.4
 ./monotonic_align
