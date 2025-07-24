@@ -28,7 +28,8 @@ jobs:
         run: |
           pip3 install Cython==0.29.32
           pip3 install -r requirements.txt pyinstaller
-          pip uninstall torch -y
+          pip uninstall -y torch triton
+          pip uninstall -y $(pip freeze | grep 'nvidia-' | cut -d '=' -f 1)
           pip install torch==2.3.1+cpu --index-url https://download.pytorch.org/whl/cpu
 
       - name: Build local Cython module
@@ -41,7 +42,7 @@ jobs:
 
       - name: Compress dist folder
         run: |
-          tar -cf - dist/ | xz -9 -e > PJSK-MultiGUI-Linux-${{ github.ref_name }}.tar.xz
+          tar -cf - dist/ | zstd -7 > PJSK-MultiGUI-Linux-${{ github.ref_name }}.tar.xz
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
