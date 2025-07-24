@@ -186,10 +186,9 @@ jobs:
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v1
         with:
+          token: ${{ secrets.act }}
           files: |
             out/linux/**
             out/windows/**
             out/macos-intel/**
             out/macos-arm/**
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
