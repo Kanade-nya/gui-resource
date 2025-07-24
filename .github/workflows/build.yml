@@ -2,39 +2,54 @@ name: Build PJSK-MultiGUI
 
 on:
   push:
-    paths:
-      - '**.py'
-      - '**.spec'
-      - requirements.txt
+    tags:
+      - 'v*'
   workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
   build-linux:
     runs-on: ubuntu-22.04
-    name: Build on Linux (Ubuntu 20.04 via Docker)
+
+    env:
+      CUDA_VISIBLE_DEVICES: ''
+    
+    name: Build on Linux
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build in Ubuntu 20.04 container
+      - name: Install system dependencies
         run: |
-          docker run --rm -v "$PWD":/app -w /app ubuntu:20.04 /bin/bash -c "
-            apt update &&
-            apt install -y python3 python3-pip build-essential libgl1 libx11-dev &&
-            pip3 install Cython==0.29.32 &&
-            pip3 install -r requirements.txt pyinstaller &&
-            pip3 uninstall -y torch &&
-            pip3 install torch==1.12.1 &&
-            cd monotonic_align &&
-            python3 setup.py build_ext --inplace &&
-            cd .. &&
-            pyinstaller --clean --strip PJSK-MultiGUI.spec
-          "
+          sudo apt update
+          sudo apt install -y python3 python3-pip build-essential libgl1 libx11-dev libsndfile1
+
+      - name: Install Python dependencies
+        run: |
+          pip3 install Cython==0.29.32
+          pip3 install -r requirements.txt pyinstaller
+          pip uninstall -y torch triton
+          pip uninstall -y $(pip freeze | grep 'nvidia-' | cut -d '=' -f 1)
+          pip install torch==2.3.1+cpu --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Build local Cython module
+        run: |
+          cd monotonic_align
+          python3 setup.py build_ext --inplace
+
+      - name: Build with PyInstaller
+        run: pyinstaller --clean PJSK-MultiGUI.spec  \
+            --add-binary "/usr/lib/x86_64-linux-gnu/libsndfile.so.1:."
+
+      - name: Compress dist folder
+        run: |
+          tar -cf - dist/ | zstd -7 > PJSK-MultiGUI-Linux-${{ github.ref_name }}.tar.xz
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-Linux
-          path: dist/
+          name: PJSK-MultiGUI-Linux-TarXz
+          path: PJSK-MultiGUI-Linux-${{ github.ref_name }}.tar.xz
 
   build-windows:
     runs-on: windows-2022
@@ -59,18 +74,19 @@ jobs:
 
       - name: Build with PyInstaller
         run: pyinstaller PJSK-MultiGUI.spec
+      
+      - name: Compress Windows dist to ZIP
+        run: powershell Compress-Archive -Path dist/* -DestinationPath PJSK-MultiGUI-Windows-${{ github.ref_name }}.zip
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-Windows
-          path: dist/
+          name: PJSK-MultiGUI-Windows-Zip
+          path: PJSK-MultiGUI-Windows-${{ github.ref_name }}.zip
 
   build-macos-intel:
     runs-on: macos-13
-    name: Build on macOS Intel (target 11.0)
-    env:
-      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    name: Build on macOS Intel (target 13.0)
     steps:
       - uses: actions/checkout@v4
 
@@ -94,19 +110,17 @@ jobs:
 
       - name: Compress .app bundle
         run: |
-          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS.zip
+          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS-Intel-${{ github.ref_name }}.zip
 
       - name: Upload compressed .app zip
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-macOS-Intel-Zip
-          path: PJSK-MultiGUI-macOS.zip
+          name: PJSK-MultiGUI-macOS-Intel-Zip
+          path: PJSK-MultiGUI-macOS-Intel-${{ github.ref_name }}.zip
 
   build-macos-arm:
     runs-on: macos-14
-    name: Build on macOS ARM (target 11.0)
-    env:
-      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    name: Build on macOS ARM
     steps:
       - uses: actions/checkout@v4
 
@@ -117,6 +131,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          brew install libsndfile || true
           pip install Cython==0.29.32
           pip install -r requirements.txt pyinstaller
       
@@ -126,14 +141,55 @@ jobs:
           python setup.py build_ext --inplace
 
       - name: Build with PyInstaller
-        run: pyinstaller PJSK-MultiGUI.spec
+        run: pyinstaller PJSK-MultiGUI.spec \
+            --add-binary "/opt/homebrew/lib/libsndfile.dylib:."
       
       - name: Compress .app bundle
         run: |
-          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS.zip
+          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS-ARM-${{ github.ref_name }}.zip
 
       - name: Upload compressed .app zip
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-macOS-ARM-Zip
-          path: PJSK-MultiGUI-macOS.zip
+          name: PJSK-MultiGUI-macOS-ARM-Zip
+          path: PJSK-MultiGUI-macOS-ARM-${{ github.ref_name }}.zip
+  release-assets:
+    name: Upload to GitHub Release
+    needs:
+      - build-linux
+      - build-windows
+      - build-macos-intel
+      - build-macos-arm
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PJSK-MultiGUI-Linux-TarXz
+          path: out/linux
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: PJSK-MultiGUI-Windows-Zip
+          path: out/windows
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: PJSK-MultiGUI-macOS-Intel-Zip
+          path: out/macos-intel
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: PJSK-MultiGUI-macOS-ARM-Zip
+          path: out/macos-arm
+
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            out/linux/**
+            out/windows/**
+            out/macos-intel/**
+            out/macos-arm/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
