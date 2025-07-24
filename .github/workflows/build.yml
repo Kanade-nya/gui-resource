@@ -11,6 +11,10 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-22.04
+
+    env:
+      CUDA_VISIBLE_DEVICES: ''
+    
     name: Build on Linux
     steps:
       - uses: actions/checkout@v4
@@ -33,11 +37,15 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller --clean PJSK-MultiGUI.spec
 
+      - name: Compress dist folder
+        run: |
+          tar -cf - dist/ | xz -9 -e > PJSK-MultiGUI-Linux-${{ github.ref_name }}.tar.xz
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-Linux
-          path: dist/
+          name: PJSK-MultiGUI-Linux-TarXz
+          path: PJSK-MultiGUI-Linux-${{ github.ref_name }}.tar.xz
 
   build-windows:
     runs-on: windows-2022
@@ -62,12 +70,15 @@ jobs:
 
       - name: Build with PyInstaller
         run: pyinstaller PJSK-MultiGUI.spec
+      
+      - name: Compress Windows dist to ZIP
+        run: powershell Compress-Archive -Path dist/* -DestinationPath PJSK-MultiGUI-Windows-${{ github.ref_name }}.zip
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-Windows
-          path: dist/
+          name: PJSK-MultiGUI-Windows-Zip
+          path: PJSK-MultiGUI-Windows-${{ github.ref_name }}.zip
 
   build-macos-intel:
     runs-on: macos-13
@@ -95,13 +106,13 @@ jobs:
 
       - name: Compress .app bundle
         run: |
-          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS.zip
+          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS-Intel-${{ github.ref_name }}.zip
 
       - name: Upload compressed .app zip
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-macOS-Intel-Zip
-          path: PJSK-MultiGUI-macOS.zip
+          name: PJSK-MultiGUI-macOS-Intel-Zip
+          path: PJSK-MultiGUI-macOS-Intel-${{ github.ref_name }}.zip
 
   build-macos-arm:
     runs-on: macos-14
@@ -131,13 +142,13 @@ jobs:
       
       - name: Compress .app bundle
         run: |
-          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS.zip
+          ditto -c -k --sequesterRsrc --keepParent dist/PJSK-MultiGUI.app PJSK-MultiGUI-macOS-ARM-${{ github.ref_name }}.zip
 
       - name: Upload compressed .app zip
         uses: actions/upload-artifact@v4
         with:
-          name: PJSK-macOS-ARM-Zip
-          path: PJSK-MultiGUI-macOS.zip
+          name: PJSK-MultiGUI-macOS-ARM-Zip
+          path: PJSK-MultiGUI-macOS-ARM-${{ github.ref_name }}.zip
   release-assets:
     name: Upload to GitHub Release
     needs:
@@ -150,22 +161,22 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: PJSK-Linux
+          name: PJSK-MultiGUI-Linux-TarXz
           path: out/linux
 
       - uses: actions/download-artifact@v4
         with:
-          name: PJSK-Windows
+          name: PJSK-MultiGUI-Windows-Zip
           path: out/windows
 
       - uses: actions/download-artifact@v4
         with:
-          name: PJSK-macOS-Intel-Zip
+          name: PJSK-MultiGUI-macOS-Intel-Zip
           path: out/macos-intel
 
       - uses: actions/download-artifact@v4
         with:
-          name: PJSK-macOS-ARM-Zip
+          name: PJSK-MultiGUI-macOS-ARM-Zip
           path: out/macos-arm
 
       - name: Upload to GitHub Releases
