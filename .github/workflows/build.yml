@@ -28,6 +28,8 @@ jobs:
         run: |
           pip3 install Cython==0.29.32
           pip3 install -r requirements.txt pyinstaller
+          pip uninstall torch -y
+          pip install torch==2.3.1+cpu --index-url https://download.pytorch.org/whl/cpu
 
       - name: Build local Cython module
         run: |
@@ -62,8 +64,6 @@ jobs:
         run: |
           pip install Cython==0.29.32
           pip install -r requirements.txt pyinstaller
-          pip uninstall torch -y
-          pip install torch==2.3.1+cpu --index-url https://download.pytorch.org/whl/cpu
       
       - name: Build local Cython module
         run: |
