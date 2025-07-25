@@ -39,7 +39,7 @@ jobs:
 
       - name: Build with PyInstaller
         run: pyinstaller --clean PJSK-MultiGUI.spec  \
-            --add-binary "/usr/lib/x86_64-linux-gnu/libsndfile.so.1:."
+            --add-binary "$(python -c 'import os, soundfile; print(os.path.join(os.path.dirname(soundfile.__file__), "_soundfile_data", "libsndfile.so))'):_soundfile_data"
 
       - name: Compress dist folder
         run: |
@@ -142,7 +142,7 @@ jobs:
 
       - name: Build with PyInstaller
         run: pyinstaller PJSK-MultiGUI.spec \
-            --add-binary "/opt/homebrew/lib/libsndfile.dylib:."
+            --add-binary "$(python -c 'import os, soundfile; print(os.path.join(os.path.dirname(soundfile.__file__), "_soundfile_data", "libsndfile.dylib))'):_soundfile_data"
       
       - name: Compress .app bundle
         run: |
@@ -186,10 +186,9 @@ jobs:
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v1
         with:
+          token: ${{ secrets.PJSKMGUI }}
           files: |
             out/linux/**
             out/windows/**
             out/macos-intel/**
             out/macos-arm/**
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
