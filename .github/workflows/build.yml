@@ -142,7 +142,7 @@ jobs:
 
       - name: Build with PyInstaller
         run: pyinstaller PJSK-MultiGUI.spec \
-            --add-binary "$(find $(python3 -c 'import site; print(site.getsitepackages()[0])') -name 'libsndfile.dylib' | head -n1):_soundfile_data"
+            --add-binary "$(python -c 'import os, soundfile; print(os.path.join(os.path.dirname(soundfile.__file__), "_soundfile_data", "libsndfile.dylib"))'):_soundfile_data"
       
       - name: Compress .app bundle
         run: |
